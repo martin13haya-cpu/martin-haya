@@ -766,52 +766,186 @@ const Sidebar = ({page,setPage,user,onLogout,open=false,setOpen=()=>{},sub,onUpg
 const LoginPage = ({onLogin}) => {
   const [email,setEmail]=useState(""), [pass,setPass]=useState(""),
         [err,setErr]=useState(""), [loading,setLoading]=useState(false),
-        [isSignup,setIsSignup]=useState(false), [showForgot,setShowForgot]=useState(false);
-  const submit = async e => {
-    e.preventDefault(); setErr(""); setLoading(true);
+        [isSignup,setIsSignup]=useState(false), [showForgot,setShowForgot]=useState(false),
+        [showPass,setShowPass]=useState(false);
+
+  const submit = async () => {
+    if(!email||!pass){setErr("Veuillez remplir tous les champs."); return;}
+    setErr(""); setLoading(true);
     try{
       const {error} = isSignup
         ? await supabase.auth.signUp({email,password:pass})
         : await supabase.auth.signInWithPassword({email,password:pass});
       if(error) setErr(error.message);
-      else { if(isSignup) setErr("Vérifiez votre email pour confirmer le compte."); else onLogin(); }
+      else { if(isSignup) setErr("✅ Vérifiez votre email pour confirmer le compte."); else onLogin(); }
     }finally{setLoading(false);}
   };
+
+  const isSuccess = err.startsWith("✅");
+
+  const pageStyle={
+    minHeight:"100vh",
+    background:"linear-gradient(135deg,#0f2d6b 0%,#1a4fa8 55%,#2d6fd4 100%)",
+    display:"flex",alignItems:"center",justifyContent:"center",
+    fontFamily:"system-ui,sans-serif",padding:"20px",position:"relative",overflow:"hidden"
+  };
+  const cardStyle={
+    background:"#ffffff",borderRadius:"20px",padding:"2.5rem 2.5rem 2rem",
+    width:"100%",maxWidth:"420px",position:"relative",zIndex:1,
+    boxShadow:"0 24px 64px rgba(0,0,0,0.18)"
+  };
+  const inputWrapStyle={position:"relative"};
+  const inputStyle={
+    width:"100%",padding:"11px 14px 11px 42px",
+    border:`1.5px solid ${err&&!isSuccess?"#fca5a5":"#e2e8f0"}`,
+    borderRadius:"10px",fontSize:"14px",color:"#1e293b",
+    background:"#f8fafc",outline:"none",fontFamily:"inherit",
+    transition:"border-color .2s, box-shadow .2s"
+  };
+  const iconStyle={
+    position:"absolute",left:"13px",top:"50%",transform:"translateY(-50%)",
+    color:"#94a3b8",fontSize:"17px",pointerEvents:"none"
+  };
+  const labelStyle={display:"block",fontSize:"13px",fontWeight:600,color:"#334155",marginBottom:"6px"};
+  const btnPrimaryStyle={
+    width:"100%",padding:"13px",
+    background:loading?"#93c5fd":"linear-gradient(135deg,#1a4fa8,#2d6fd4)",
+    color:"#fff",border:"none",borderRadius:"10px",fontSize:"15px",fontWeight:600,
+    cursor:loading?"not-allowed":"pointer",letterSpacing:"0.2px",
+    transition:"opacity .15s, transform .15s",fontFamily:"inherit"
+  };
+
   return (
-    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#1a3a6b 0%,#1a6dd6 50%,#63a8f0 100%)",display:"flex",
-                 alignItems:"center",justifyContent:"center",fontFamily:"system-ui,sans-serif"}}>
-      <div style={{width:"100%",maxWidth:"380px",padding:"20px"}}>
-        <div style={{textAlign:"center",marginBottom:"32px"}}>
-          <div style={{fontSize:"32px",fontWeight:900,color:"#1a3a6b",letterSpacing:"-1px"}}>RH-Paie Pro</div>
-          <div style={{color:"#5a7a9a",fontSize:"14px",marginTop:"6px"}}>Gestion de la Paie — Bénin / UEMOA</div>
+    <div style={pageStyle}>
+      {/* déco cercles */}
+      <div style={{position:"absolute",width:"500px",height:"500px",borderRadius:"50%",
+                   background:"rgba(255,255,255,0.04)",top:"-130px",right:"-100px",zIndex:0}}/>
+      <div style={{position:"absolute",width:"300px",height:"300px",borderRadius:"50%",
+                   background:"rgba(255,255,255,0.04)",bottom:"-80px",left:"-70px",zIndex:0}}/>
+      {/* grille */}
+      <div style={{position:"absolute",inset:0,zIndex:0,
+                   backgroundImage:"linear-gradient(rgba(255,255,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.03) 1px,transparent 1px)",
+                   backgroundSize:"40px 40px"}}/>
+
+      <div style={cardStyle}>
+        {/* badge */}
+        <div style={{position:"absolute",top:"-13px",right:"24px",
+                     background:"linear-gradient(135deg,#1a4fa8,#2d6fd4)",color:"#fff",
+                     fontSize:"11px",fontWeight:700,padding:"4px 14px",
+                     borderRadius:"20px",letterSpacing:"0.3px"}}>
+          Bénin / UEMOA
         </div>
-        <Card>
-          <Alert msg={err} type={err.includes("rifi") ? "success" : "error"}/>
-          <div>
-            <Input label="Email" value={email} onChange={setEmail} type="email" required/>
-            <Input label="Mot de passe" value={pass} onChange={setPass} type="password" required/>
-            <div style={{marginTop:"8px"}}>
-              <Btn onClick={submit} disabled={loading}>
-                {loading?"...":(isSignup?"Créer le compte":"Se connecter")}
-              </Btn>
-            </div>
+
+        {/* logo */}
+        <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"1.75rem"}}>
+          <div style={{width:"44px",height:"44px",background:"linear-gradient(135deg,#1a4fa8,#2d6fd4)",
+                       borderRadius:"12px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="7" width="20" height="14" rx="2"/>
+              <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+              <line x1="12" y1="12" x2="12" y2="16"/>
+              <line x1="10" y1="14" x2="14" y2="14"/>
+            </svg>
           </div>
-          <div style={{marginTop:"16px",textAlign:"center",display:"flex",flexDirection:"column",gap:"8px"}}>
-            {!isSignup&&(
-              <button onClick={()=>setShowForgot(true)}
-                style={{background:"none",border:"none",color:G.textDim,cursor:"pointer",
-                        fontSize:"12px",fontFamily:"inherit",textDecoration:"underline"}}>
-                Mot de passe oublié ?
-              </button>
-            )}
-            <button onClick={()=>{setIsSignup(!isSignup);setErr("");}}
-              style={{background:"none",border:"none",color:G.accent,cursor:"pointer",
-                      fontSize:"13px",fontFamily:"inherit"}}>
-              {isSignup?"Déjà un compte ? Se connecter":"Pas de compte ? S'inscrire"}
+          <div>
+            <div style={{fontSize:"18px",fontWeight:800,color:"#0f2d6b",letterSpacing:"-0.3px"}}>RH-Paie Pro</div>
+            <div style={{fontSize:"12px",color:"#64748b",marginTop:"1px"}}>Gestion de la Paie</div>
+          </div>
+        </div>
+
+        {/* titre */}
+        <div style={{marginBottom:"1.5rem"}}>
+          <h2 style={{fontSize:"22px",fontWeight:700,color:"#0f2d6b",marginBottom:"4px"}}>
+            {isSignup?"Créer un compte":"Bienvenue 👋"}
+          </h2>
+          <p style={{fontSize:"14px",color:"#64748b"}}>
+            {isSignup?"Rejoignez RH-Paie Pro dès aujourd'hui":"Connectez-vous à votre espace de gestion"}
+          </p>
+        </div>
+
+        {/* alerte */}
+        {err&&(
+          <div style={{background:isSuccess?"#f0fdf4":"#eff6ff",
+                       border:`1px solid ${isSuccess?"#bbf7d0":"#bfdbfe"}`,
+                       borderRadius:"8px",padding:"9px 13px",fontSize:"13px",
+                       color:isSuccess?"#166534":"#1e40af",marginBottom:"1rem",
+                       display:"flex",alignItems:"flex-start",gap:"8px"}}>
+            <span style={{flexShrink:0}}>{isSuccess?"✅":"ℹ️"}</span>
+            <span>{err.replace("✅ ","")}</span>
+          </div>
+        )}
+
+        {/* champ email */}
+        <div style={{marginBottom:"1rem"}}>
+          <label style={labelStyle}>Adresse email</label>
+          <div style={inputWrapStyle}>
+            <span style={iconStyle}>✉</span>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+              placeholder="exemple@email.com" style={inputStyle}
+              onFocus={e=>{e.target.style.borderColor="#1a4fa8";e.target.style.background="#fff";e.target.style.boxShadow="0 0 0 3px rgba(26,79,168,0.1)";}}
+              onBlur={e=>{e.target.style.borderColor="#e2e8f0";e.target.style.background="#f8fafc";e.target.style.boxShadow="none";}}
+              onKeyDown={e=>{if(e.key==="Enter") submit();}}
+            />
+          </div>
+        </div>
+
+        {/* champ mot de passe */}
+        <div style={{marginBottom:"0.75rem"}}>
+          <label style={labelStyle}>Mot de passe</label>
+          <div style={inputWrapStyle}>
+            <span style={iconStyle}>🔒</span>
+            <input type={showPass?"text":"password"} value={pass} onChange={e=>setPass(e.target.value)}
+              placeholder="••••••••" style={{...inputStyle,paddingRight:"42px"}}
+              onFocus={e=>{e.target.style.borderColor="#1a4fa8";e.target.style.background="#fff";e.target.style.boxShadow="0 0 0 3px rgba(26,79,168,0.1)";}}
+              onBlur={e=>{e.target.style.borderColor="#e2e8f0";e.target.style.background="#f8fafc";e.target.style.boxShadow="none";}}
+              onKeyDown={e=>{if(e.key==="Enter") submit();}}
+            />
+            <button onClick={()=>setShowPass(p=>!p)}
+              style={{position:"absolute",right:"12px",top:"50%",transform:"translateY(-50%)",
+                      background:"none",border:"none",cursor:"pointer",color:"#94a3b8",
+                      fontSize:"16px",padding:"2px",lineHeight:1}}>
+              {showPass?"🙈":"👁"}
             </button>
           </div>
-          {showForgot&&<ForgotPasswordModal onClose={()=>setShowForgot(false)}/>}
-        </Card>
+        </div>
+
+        {/* mot de passe oublié */}
+        {!isSignup&&(
+          <div style={{textAlign:"right",marginBottom:"1.4rem"}}>
+            <button onClick={()=>setShowForgot(true)}
+              style={{background:"none",border:"none",color:"#1a4fa8",cursor:"pointer",
+                      fontSize:"13px",fontWeight:500,fontFamily:"inherit",textDecoration:"none"}}>
+              Mot de passe oublié ?
+            </button>
+          </div>
+        )}
+
+        {/* bouton connexion */}
+        <button onClick={submit} disabled={loading} style={btnPrimaryStyle}
+          onMouseOver={e=>{if(!loading){e.target.style.opacity="0.9";e.target.style.transform="translateY(-1px)";}}}
+          onMouseOut={e=>{e.target.style.opacity="1";e.target.style.transform="translateY(0)";}}>
+          {loading?"⏳ Connexion en cours…":(isSignup?"Créer mon compte":"Se connecter")}
+        </button>
+
+        {/* divider */}
+        <div style={{display:"flex",alignItems:"center",gap:"10px",margin:"1.2rem 0"}}>
+          <div style={{flex:1,height:"1px",background:"#e2e8f0"}}/>
+          <span style={{fontSize:"13px",color:"#94a3b8"}}>ou</span>
+          <div style={{flex:1,height:"1px",background:"#e2e8f0"}}/>
+        </div>
+
+        {/* switch signup/login */}
+        <button onClick={()=>{setIsSignup(s=>!s);setErr("");}}
+          style={{width:"100%",padding:"11px",background:"#f1f5f9",color:"#475569",
+                  border:"1.5px solid #e2e8f0",borderRadius:"10px",fontSize:"14px",
+                  fontWeight:600,cursor:"pointer",fontFamily:"inherit",
+                  transition:"background .15s"}}
+          onMouseOver={e=>e.target.style.background="#e2e8f0"}
+          onMouseOut={e=>e.target.style.background="#f1f5f9"}>
+          {isSignup?"Déjà un compte ? Se connecter":"Pas de compte ? S'inscrire"}
+        </button>
+
+        {showForgot&&<ForgotPasswordModal onClose={()=>setShowForgot(false)}/>}
       </div>
     </div>
   );
