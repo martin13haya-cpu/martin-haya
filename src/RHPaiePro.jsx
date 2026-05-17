@@ -1449,7 +1449,7 @@ const getTauxRisque = (taux) => {
   return 4;
 };
 
-const genDeclarationCNSS = async (comp, employes, mois, annee) => {
+const genDeclarationCNSS = async (comp, employes, mois, annee, extra={}) => {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(b64ToBuffer(CNSS_TEMPLATE_B64));
 
@@ -1457,14 +1457,22 @@ const genDeclarationCNSS = async (comp, employes, mois, annee) => {
   const ws2 = wb.getWorksheet('annexe');
 
   const moisNum  = parseInt(mois);
+  const moisSuiv = moisNum===12?1:moisNum+1;
+  const anneeSuiv= moisNum===12?parseInt(annee)+1:parseInt(annee);
   const joursFin = [4,6,9,11].includes(moisNum)?30:moisNum===2?28:31;
-  const periodeDebut = `01/${String(moisNum).padStart(2,'0')}/${annee}`;
-  const periodeFin   = `${joursFin}/${String(moisNum).padStart(2,'0')}/${annee}`;
-  const taux       = parseFloat(comp?.taux_cnss_patronale||0.194);
-  const tauxRisque = getTauxRisque(taux);
-  const societe    = comp?.raison_sociale||'';
-  const ifu        = comp?.ifu||'';
-  const cnssEmp    = comp?.cnss_employeur||comp?.rccm||'';
+  const periodeDebut  = `01/${String(moisNum).padStart(2,'0')}/${annee}`;
+  const periodeFin    = `${joursFin}/${String(moisNum).padStart(2,'0')}/${annee}`;
+  const dateLimite    = `10/${String(moisSuiv).padStart(2,'0')}/${anneeSuiv}`;
+  const taux          = parseFloat(comp?.taux_cnss_patronale||0.194);
+  const tauxRisque    = getTauxRisque(taux);
+  const societe       = comp?.raison_sociale||'';
+  const ifu           = String(comp?.ifu||'');
+  const cnssEmp       = comp?.cnss_employeur||comp?.rccm||'';
+  const burServ       = extra.bur_serv||'';
+  const agence        = extra.agence||'';
+  const centreRecouv  = extra.centre_recouvrement||'';
+  const adresse       = extra.adresse||comp?.adresse||'';
+  const localisation  = extra.localisation||'';
 
   const masse    = employes.reduce((s,e)=>s+parseFloat(e.salaire_brut||0),0);
   const nbEmp    = employes.length;
@@ -1481,23 +1489,32 @@ const genDeclarationCNSS = async (comp, employes, mois, annee) => {
     if(numF && typeof val==='number') cell.numFmt = numFmt;
   };
 
-  // Remplissage côté gauche (IFU, N° CNSS, périodes)
-  ws.getCell('C12').value = ifu;
-  ws.getCell('C16').value = cnssEmp;
-  ws.getCell('C20').value = periodeDebut;
+  // ── IFU chiffre par chiffre dans C12:O12 ──
+  const ifuCols = ['C','D','E','F','G','H','I','J','K','L','M','N','O'];
+  ifuCols.forEach((col,i) => {
+    ws.getCell(`${col}12`).value = ifu[i]||'';
+  });
 
-  // Remplissage côté droit (colonne U)
+  // ── Côté gauche (valeurs en colonne C de chaque ligne) ──
+  ws.getCell('C14').value = cnssEmp;
+  ws.getCell('C16').value = burServ;
+  ws.getCell('C18').value = agence;
+  ws.getCell('C20').value = periodeDebut;
+  ws.getCell('C22').value = dateLimite;
+  ws.getCell('C24').value = adresse;
+
+  // ── Côté droit (colonne U) ──
   setV(ws.getCell('U10'), `${MOIS[moisNum]} ${annee}`);
   setV(ws.getCell('U12'), societe);
   setV(ws.getCell('U14'), 'CNSS');
-  setV(ws.getCell('U16'), '');
-  setV(ws.getCell('U18'), 'Salaires & accessoires');
+  setV(ws.getCell('U16'), centreRecouv);
+  setV(ws.getCell('U18'), 'Salaires');
   setV(ws.getCell('U20'), periodeFin);
-  setV(ws.getCell('U22'), '');
-  setV(ws.getCell('U24'), 'Cotonou');
+  setV(ws.getCell('U22'), dateLimite);
+  setV(ws.getCell('U24'), localisation);
 
-  // Bas du formulaire (montants)
-  setV(ws.getCell('U34'), nbEmp, true);
+  // ── Montants ──
+  setV(ws.getCell('U34'), nbEmp);
   setV(ws.getCell('U36'), Math.round(masse), true);
   setV(ws.getCell('U38'), prestFam, true);
   setV(ws.getCell('U40'), risques, true);
@@ -1507,15 +1524,14 @@ const genDeclarationCNSS = async (comp, employes, mois, annee) => {
   setV(ws.getCell('U48'), totCot, true);
   setV(ws.getCell('U50'), totCot, true);
 
-  // Signature
-  ws.getCell('R53').value = `Cotonou, le ${periodeFin}`;
+  // ── Signature ──
+  ws.getCell('R53').value = `Cotonou, le ${dateLimite}`;
 
   // ── FEUILLE ANNEXE ──
   const thin = {style:'thin'};
   const brd  = {top:thin,left:thin,bottom:thin,right:thin};
   const cal  = (bold=false,sz=9) => ({name:'Calibri',bold,size:sz});
 
-  // Sous-titre
   ws2.mergeCells(2,1,2,23);
   const cSub = ws2.getCell(2,1);
   cSub.value = `${societe}  —  Période : ${periodeDebut} au ${periodeFin}  —  N° CNSS : ${cnssEmp}`;
@@ -1571,19 +1587,27 @@ const genDeclarationCNSS = async (comp, employes, mois, annee) => {
   a.click(); URL.revokeObjectURL(url);
 };
 
-const genDeclarationITS = async (comp, employes, mois, annee) => {
+const genDeclarationITS = async (comp, employes, mois, annee, extra={}) => {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(b64ToBuffer(ITS_TEMPLATE_B64));
 
   const ws = wb.getWorksheet('declaration');
 
   const moisNum  = parseInt(mois);
+  const moisSuiv = moisNum===12?1:moisNum+1;
+  const anneeSuiv= moisNum===12?parseInt(annee)+1:parseInt(annee);
   const joursFin = [4,6,9,11].includes(moisNum)?30:moisNum===2?28:31;
   const periodeDebut = `01/${String(moisNum).padStart(2,'0')}/${annee}`;
   const periodeFin   = `${joursFin}/${String(moisNum).padStart(2,'0')}/${annee}`;
-  const societe  = comp?.raison_sociale||'';
-  const ifu      = comp?.ifu||'';
-  const cnssEmp  = comp?.cnss_employeur||comp?.rccm||'';
+  const dateLimite   = `10/${String(moisSuiv).padStart(2,'0')}/${anneeSuiv}`;
+  const societe      = comp?.raison_sociale||'';
+  const ifu          = String(comp?.ifu||'');
+  const cnssEmp      = comp?.cnss_employeur||comp?.rccm||'';
+  const burServ      = extra.bur_serv||'';
+  const agence       = extra.agence||'';
+  const centreRecouv = extra.centre_recouvrement||'';
+  const adresse      = extra.adresse||comp?.adresse||'';
+  const localisation = extra.localisation||'';
 
   const nbEmp  = employes.length;
   const masse  = employes.reduce((s,e)=>s+parseFloat(e.salaire_brut||0),0);
@@ -1595,28 +1619,36 @@ const genDeclarationITS = async (comp, employes, mois, annee) => {
     if(numF && typeof val==='number') cell.numFmt = numFmt;
   };
 
-  // Côté gauche
-  ws.getCell('B14').value = ifu;
-  ws.getCell('B16').value = '';
-  ws.getCell('B18').value = cnssEmp;
+  // ── IFU chiffre par chiffre dans B14:N14 ──
+  const ifuCols = ['B','C','D','E','F','G','H','I','J','K','L','M','N'];
+  ifuCols.forEach((col,i) => {
+    ws.getCell(`${col}14`).value = ifu[i]||'';
+  });
+
+  // ── Côté gauche ──
+  ws.getCell('B16').value = cnssEmp;
+  ws.getCell('B18').value = burServ;
+  ws.getCell('B20').value = agence;
   ws.getCell('B22').value = periodeDebut;
+  ws.getCell('B24').value = dateLimite;
+  ws.getCell('B26').value = adresse;
 
-  // Côté droit (colonne T)
-  setV(ws.getCell('T12'), societe);
-  setV(ws.getCell('T14'), 'IRPP-TS');
-  setV(ws.getCell('T16'), '');
-  setV(ws.getCell('T18'), 'Salaires & traitements');
+  // ── Côté droit (colonne T, cellules fusionnées T:U) ──
+  setV(ws.getCell('T12'), `${MOIS[moisNum]} ${annee}`);
+  setV(ws.getCell('T14'), societe);
+  setV(ws.getCell('T16'), 'IRPP-TS');
+  setV(ws.getCell('T18'), centreRecouv);
   setV(ws.getCell('T20'), periodeFin);
-  setV(ws.getCell('T22'), '');
-  setV(ws.getCell('T24'), '');
+  setV(ws.getCell('T22'), dateLimite);
+  setV(ws.getCell('T24'), localisation);
 
-  // Montants bas du formulaire
-  setV(ws.getCell('T36'), nbEmp, true);
+  // ── Montants ──
+  setV(ws.getCell('T36'), nbEmp);
   setV(ws.getCell('T38'), Math.round(masse), true);
   setV(ws.getCell('T40'), Math.round(itsTot), true);
 
-  // Signature
-  ws.getCell('Q44').value = `Cotonou, le ${periodeFin}`;
+  // ── Signature ──
+  ws.getCell('Q44').value = `Cotonou, le ${dateLimite}`;
 
   const buf  = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
@@ -1624,7 +1656,6 @@ const genDeclarationITS = async (comp, employes, mois, annee) => {
   const a    = document.createElement('a');
   a.href=url; a.download=`Declaration_ITS_${societe.replace(/\s+/g,'_')}_${MOIS[moisNum]}_${annee}.xlsx`;
   a.click(); URL.revokeObjectURL(url);
-};
 };
 
 // ─── GÉNÉRATION DEPUIS MODÈLE ─────────────────────────────────────────────────
@@ -1869,6 +1900,67 @@ const TemplateManager = ({companies, user, compId, mois, annee, data}) => {
   );
 };
 
+// ─── MODAL FORMULAIRE DÉCLARATION ────────────────────────────────────────────
+const DeclarationFormModal = ({type, comp, mois, annee, employes, onClose}) => {
+  const moisNum  = parseInt(mois);
+  const moisSuiv = moisNum===12?1:moisNum+1;
+  const anneeSuiv= moisNum===12?parseInt(annee)+1:parseInt(annee);
+  const dateLimiteAuto = `10/${String(moisSuiv).padStart(2,'0')}/${anneeSuiv}`;
+  const [form, setForm] = useState({
+    bur_serv: '',
+    agence: '',
+    centre_recouvrement: '',
+    adresse: comp?.adresse||'',
+    localisation: 'Cotonou',
+  });
+  const [loading, setLoading] = useState(false);
+  const f = (k,v) => setForm(p=>({...p,[k]:v}));
+  const isCNSS = type==='cnss';
+
+  const generate = async () => {
+    setLoading(true);
+    try {
+      if(isCNSS) {
+        await genDeclarationCNSS(comp, employes, mois, annee, form);
+        toast.success("✅ Déclaration CNSS téléchargée !");
+      } else {
+        await genDeclarationITS(comp, employes, mois, annee, form);
+        toast.success("✅ Déclaration ITS téléchargée !");
+      }
+      onClose();
+    } catch(e) {
+      toast.error("Erreur génération : "+e.message);
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <Modal title={isCNSS?"📊 Générer Déclaration CNSS":"📊 Générer Déclaration ITS"} onClose={onClose} width="540px">
+      <div style={{background:"#f0f4ff",borderRadius:"8px",padding:"12px 14px",marginBottom:"16px",fontSize:"12px",color:"#1a3a6b",border:"1px solid #d0dff5"}}>
+        <strong>Société :</strong> {comp?.raison_sociale} &nbsp;|&nbsp;
+        <strong>Période :</strong> {MOIS[moisNum]} {annee} &nbsp;|&nbsp;
+        <strong>Date limite :</strong> {dateLimiteAuto}
+      </div>
+      <div style={{fontSize:"12px",fontWeight:700,color:"#5a7a9a",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:"10px"}}>
+        Champs à remplir manuellement
+      </div>
+      <div className="rh-form-grid-2">
+        <Input label="BUR/SERV DE GESTION" value={form.bur_serv} onChange={v=>f('bur_serv',v)} placeholder="Ex : DGI Cotonou"/>
+        <Input label="AGENCE" value={form.agence} onChange={v=>f('agence',v)} placeholder="Ex : Agence principale"/>
+      </div>
+      <Input label="CENTRE DE RECOUVREMENT" value={form.centre_recouvrement} onChange={v=>f('centre_recouvrement',v)} placeholder="Ex : Centre fiscal de Cotonou"/>
+      <Input label="ADRESSE DE CORRESPONDANCE" value={form.adresse} onChange={v=>f('adresse',v)} placeholder="Ex : 01 BP 369, Cotonou"/>
+      <Input label="LOCALISATION" value={form.localisation} onChange={v=>f('localisation',v)} placeholder="Ex : Cotonou"/>
+      <div style={{background:"#f8faff",borderRadius:"8px",padding:"10px 14px",marginTop:"8px",marginBottom:"16px",fontSize:"12px",color:"#5a7a9a",border:"1px solid #e0eaff"}}>
+        ℹ️ Les dates (début, fin, limite dépôt/paiement) sont calculées automatiquement selon la période.
+      </div>
+      <div className="rh-actions-row">
+        <Btn onClick={generate} disabled={loading}>{loading?"Génération...":"⬇️ Générer et télécharger"}</Btn>
+        <Btn onClick={onClose} variant="ghost">Annuler</Btn>
+      </div>
+    </Modal>
+  );
+};
+
 const Declarations = ({companies, user}) => {
   const [compId,setCompId]=useState(companies[0]?.id||"");
   const [mois,setMois]=useState(String(new Date().getMonth()+1));
@@ -1877,6 +1969,7 @@ const Declarations = ({companies, user}) => {
   const [decl,setDecl]=useState(null);
   const [msg,setMsg]=useState("");
   const [tab,setTab]=useState("suivi");
+  const [declForm,setDeclForm]=useState(null);
   const years=Array.from({length:5},(_,i)=>String(CURRENT_YEAR-i));
 
   const load = useCallback(async()=>{
@@ -1973,33 +2066,30 @@ const Declarations = ({companies, user}) => {
     win.onload=()=>win.print();
   };
 
+  const declComp=companies.find(c=>c.id===compId);
+  const declEmps=(data?.payrolls_detail||[]).map(p=>({
+    ...p,...(p.employees||{}),
+    nom:p.employees?.nom||'',prenoms:p.employees?.prenoms||'',
+    cnss:p.employees?.cnss||'',ifu:p.employees?.ifu||'',
+    date_embauche:p.employees?.date_embauche||'',
+  }));
+
   return (
     <div>
+      {declForm&&<DeclarationFormModal
+        type={declForm}
+        comp={declComp}
+        mois={mois} annee={annee}
+        employes={declEmps}
+        onClose={()=>setDeclForm(null)}
+      />}
       <div className="rh-page-header">
         <h2 style={{fontSize:"22px",fontWeight:700,color:"#1a3a6b"}}>Déclarations CNSS / VPS / ITS</h2>
         {data?.nb_fiches>0&&(
           <div className="rh-btn-group">
             <Btn onClick={printDecl} variant="secondary" small>🖨 Imprimer</Btn>
-            <Btn onClick={async()=>{
-              const comp=companies.find(c=>c.id===compId);
-              const emps=(data?.payrolls_detail||[]).map(p=>({
-                ...p,...(p.employees||{}),
-                nom:p.employees?.nom||'',prenoms:p.employees?.prenoms||'',
-                cnss:p.employees?.cnss||'',ifu:p.employees?.ifu||'',
-                date_embauche:p.employees?.date_embauche||'',
-              }));
-              await genDeclarationCNSS(comp,emps,mois,annee);
-              toast.success("✅ Déclaration CNSS téléchargée !");
-            }} variant="primary" small>📊 CNSS Excel</Btn>
-            <Btn onClick={async()=>{
-              const comp=companies.find(c=>c.id===compId);
-              const emps=(data?.payrolls_detail||[]).map(p=>({
-                ...p,...(p.employees||{}),
-                nom:p.employees?.nom||'',prenoms:p.employees?.prenoms||'',
-              }));
-              await genDeclarationITS(comp,emps,mois,annee);
-              toast.success("✅ Déclaration ITS téléchargée !");
-            }} variant="ghost" small>📊 ITS Excel</Btn>
+            <Btn onClick={()=>setDeclForm('cnss')} variant="primary" small>📊 CNSS Excel</Btn>
+            <Btn onClick={()=>setDeclForm('its')} variant="ghost" small>📊 ITS Excel</Btn>
           </div>
         )}
       </div>
