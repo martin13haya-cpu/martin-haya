@@ -517,9 +517,9 @@ const SubscriptionBanner = ({sub, onUpgrade}) => {
 const PricingPage = ({currentSub, userId, onClose}) => {
   const [billing,setBilling]=useState("monthly");
   const prices = {
-    starter:  {monthly:2500,  annual:2000},
-    pro:      {monthly:6000,  annual:4800},
-    enterprise:{monthly:15000,annual:12000},
+    starter:  {monthly:1500,  annual:1200},
+    pro:      {monthly:5000,  annual:4000},
+    enterprise:{monthly:10000,annual:8000},
   };
   const pay = async (plan) => {
     if(typeof window.FedaPay==="undefined"){alert("FedaPay non chargé. Vérifiez votre connexion."); return;}
@@ -2862,7 +2862,7 @@ const Settings = ({user}) => {
 
   const f=(k,v)=>setForm(p=>({...p,[k]:v}));
 
-  const ADMIN_PHONE = "22997000000"; // numéro WhatsApp admin
+  const ADMIN_PHONE = "2290195808385"; // numéro WhatsApp admin
   const ADMIN_EMAIL_CONTACT = ADMIN_EMAIL;
   const waMsg = encodeURIComponent(`Bonjour, j'ai besoin d'aide sur RH-Paie Pro. Mon compte : ${user?.email}`);
 
