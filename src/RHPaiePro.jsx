@@ -1021,8 +1021,8 @@ const Companies = ({companies,reload,userId}) => {
     const {error}=modal==="new"
       ? await supabase.from("companies").insert(payload)
       : await supabase.from("companies").update(payload).eq("id",modal.id);
-    if(error) setMsg(error.message);
-    else{ setModal(null); reload(); }
+    if(error) { setMsg(error.message); toast.error("Erreur : "+error.message); }
+    else{ setModal(null); reload(); toast.success(modal==="new"?"✅ Société créée !":"✅ Société mise à jour !"); }
   };
   const del = async id => {
     if(!confirm("Supprimer cette société et toutes ses données ?")) return;
@@ -1109,7 +1109,8 @@ const Employees = ({companies}) => {
     const {error}=modal==="new"
       ?await supabase.from("employees").insert(p)
       :await supabase.from("employees").update(p).eq("id",modal.id);
-    if(error) setMsg(error.message); else{setModal(null);load();}
+    if(error) { setMsg(error.message); toast.error("Erreur : "+error.message); }
+    else{ setModal(null); load(); toast.success(modal==="new"?"✅ Employé ajouté !":"✅ Employé mis à jour !"); }
   };
   const del = async id=>{
     if(!confirm("Supprimer cet employé ?")) return;
@@ -2704,26 +2705,39 @@ const Historique = ({companies}) => {
 
 // SETTINGS
 const Settings = ({user}) => {
- const [form,setForm]=useState({smtp_host:"",smtp_port:"587",
+  const [form,setForm]=useState({smtp_host:"",smtp_port:"587",
     smtp_user:"",smtp_pass:"",email_from:""});
-  const [msg,setMsg]=useState("");
+  const [saving,setSaving]=useState(false);
+
   useEffect(()=>{
     (async()=>{
       const {data}=await supabase.from("email_settings").select("*").eq("user_id",user.id).maybeSingle();
       if(data) setForm({...data,smtp_port:String(data.smtp_port||587)});
     })();
   },[user]);
+
   const save=async()=>{
+    setSaving(true);
     const {error}=await supabase.from("email_settings").upsert({
       ...form,user_id:user.id,smtp_port:parseInt(form.smtp_port||587),
       updated_at:new Date().toISOString()},{onConflict:"user_id"});
-    setMsg(error?error.message:"Paramètres enregistrés !");
+    setSaving(false);
+    if(error) toast.error("❌ Erreur : "+error.message);
+    else toast.success("✅ Paramètres enregistrés avec succès !");
   };
+
   const f=(k,v)=>setForm(p=>({...p,[k]:v}));
+
+  const ADMIN_PHONE = "22997000000"; // numéro WhatsApp admin
+  const ADMIN_EMAIL_CONTACT = ADMIN_EMAIL;
+  const waMsg = encodeURIComponent(`Bonjour, j'ai besoin d'aide sur RH-Paie Pro. Mon compte : ${user?.email}`);
+
   return (
     <div>
       <h2 style={{marginBottom:"24px",fontSize:"22px",fontWeight:700,color:"#1a3a6b"}}>Paramètres</h2>
-      <Card style={{maxWidth:"500px"}}>
+
+      {/* Config WhatsApp expéditeur */}
+      <Card style={{maxWidth:"520px",marginBottom:"20px"}}>
         <div style={{fontSize:"14px",fontWeight:600,marginBottom:"16px",color:G.accent}}>
           ⚙️ Configuration WhatsApp — Expéditeur
         </div>
@@ -2731,21 +2745,66 @@ const Settings = ({user}) => {
                      fontSize:"12px",color:G.textDim,border:"1px solid #d0dff5"}}>
           💡 Renseignez les coordonnées de l'expéditeur qui apparaîtront dans les messages WhatsApp envoyés aux employés.
         </div>
-        <Alert msg={msg} type={msg.includes("enregistr")?"success":"error"}/>
-        <Input label="Numéro WhatsApp expéditeur (avec indicatif pays)" 
-          value={form.smtp_host} onChange={v=>f("smtp_host",v)} 
+        <Input label="Numéro WhatsApp expéditeur (avec indicatif pays)"
+          value={form.smtp_host} onChange={v=>f("smtp_host",v)}
           placeholder="22997000000"/>
-        <Input label="Nom affiché (expéditeur)" 
-          value={form.smtp_user} onChange={v=>f("smtp_user",v)} 
+        <Input label="Nom affiché (expéditeur)"
+          value={form.smtp_user} onChange={v=>f("smtp_user",v)}
           placeholder="PSARIZ SARL - Service RH"/>
-        <Input label="Message personnalisé (optionnel)" 
-          value={form.smtp_pass} onChange={v=>f("smtp_pass",v)} 
+        <Input label="Message personnalisé (optionnel)"
+          value={form.smtp_pass} onChange={v=>f("smtp_pass",v)}
           placeholder="Pour toute question, contactez le service RH."/>
         <div style={{background:"#f0f4ff",borderRadius:"8px",padding:"12px",marginBottom:"16px",
                      fontSize:"12px",color:"#1a3a6b",border:"1px solid #d0dff5"}}>
           📱 <strong>Numéro employé :</strong> renseignez le numéro WhatsApp de chaque employé dans le champ <strong>"Email"</strong> de sa fiche (ex: 22997000000).
         </div>
-        <Btn onClick={save}>Enregistrer</Btn>
+        <Btn onClick={save} disabled={saving}>
+          {saving ? "⏳ Enregistrement…" : "💾 Enregistrer"}
+        </Btn>
+      </Card>
+
+      {/* Contact administrateur */}
+      <Card style={{maxWidth:"520px"}}>
+        <div style={{fontSize:"14px",fontWeight:600,marginBottom:"4px",color:G.accent}}>
+          🆘 Contacter l'Administrateur
+        </div>
+        <div style={{fontSize:"12px",color:G.textDim,marginBottom:"16px"}}>
+          Besoin d'aide, d'une mise à niveau de plan ou d'un accès spécial ?
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+          {/* WhatsApp */}
+          <a href={`https://wa.me/${ADMIN_PHONE}?text=${waMsg}`} target="_blank" rel="noreferrer"
+            style={{display:"flex",alignItems:"center",gap:"12px",padding:"14px 16px",
+                    background:"#dcfce7",borderRadius:"10px",textDecoration:"none",
+                    border:"1px solid #bbf7d0",transition:"opacity 0.15s"}}
+            onMouseOver={e=>e.currentTarget.style.opacity="0.85"}
+            onMouseOut={e=>e.currentTarget.style.opacity="1"}>
+            <span style={{fontSize:"24px"}}>💬</span>
+            <div>
+              <div style={{fontWeight:700,fontSize:"13px",color:"#15803d"}}>WhatsApp</div>
+              <div style={{fontSize:"12px",color:"#166534"}}>+{ADMIN_PHONE} — Réponse rapide</div>
+            </div>
+            <span style={{marginLeft:"auto",fontSize:"18px",color:"#15803d"}}>→</span>
+          </a>
+          {/* Email */}
+          <a href={`mailto:${ADMIN_EMAIL_CONTACT}?subject=Support RH-Paie Pro&body=Bonjour,%0D%0AMon compte : ${user?.email}%0D%0A%0D%0AMon message :`}
+            style={{display:"flex",alignItems:"center",gap:"12px",padding:"14px 16px",
+                    background:"#eff6ff",borderRadius:"10px",textDecoration:"none",
+                    border:"1px solid #bfdbfe",transition:"opacity 0.15s"}}
+            onMouseOver={e=>e.currentTarget.style.opacity="0.85"}
+            onMouseOut={e=>e.currentTarget.style.opacity="1"}>
+            <span style={{fontSize:"24px"}}>✉️</span>
+            <div>
+              <div style={{fontWeight:700,fontSize:"13px",color:"#1d4ed8"}}>Email</div>
+              <div style={{fontSize:"12px",color:"#1e40af"}}>{ADMIN_EMAIL_CONTACT}</div>
+            </div>
+            <span style={{marginLeft:"auto",fontSize:"18px",color:"#1d4ed8"}}>→</span>
+          </a>
+        </div>
+        <div style={{marginTop:"16px",padding:"10px 12px",background:"#f8fafc",borderRadius:"8px",
+                     fontSize:"11px",color:G.textDim,border:"1px solid #e2e8f0"}}>
+          ⏰ Disponible du lundi au vendredi, 8h–18h (heure de Cotonou)
+        </div>
       </Card>
     </div>
   );
@@ -3280,8 +3339,11 @@ export default function App() {
 
   const loadSub = useCallback(async()=>{
     if(!user) return;
-    const {data}=await supabase.from("subscriptions").select("*").eq("user_id",user.id).maybeSingle();
-    setSub(data||{status:"trial",plan:"free",user_id:user.id});
+    try {
+      const {data, error}=await supabase.from("subscriptions").select("*").eq("user_id",user.id).maybeSingle();
+      if(error) { setSub({status:"trial",plan:"free",user_id:user.id,trial_ends_at:null}); return; }
+      setSub(data||{status:"trial",plan:"free",user_id:user.id,trial_ends_at:null});
+    } catch(e) { setSub({status:"trial",plan:"free",user_id:user.id,trial_ends_at:null}); }
   },[user]);
 
   useEffect(()=>{loadCompanies();},[loadCompanies]);
