@@ -8,6 +8,7 @@ import ExcelJS from "exceljs";
 const SUPABASE_URL  = "https://rducxnyxgqrmtyvqwfzw.supabase.co";
 const SUPABASE_ANON = "sb_publishable_2K8GkCgsLbHzSy-1FhP2cg_cWIVD-vH";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
+const ADMIN_EMAIL = "martin13haya@gmail.com";
 const EMAILJS_SERVICE  = "service_n7ugp1c";   // votre Service ID
 const EMAILJS_TEMPLATE = "template_t7ro56h";  // votre Template ID
 const EMAILJS_KEY      = "n2N8upDAe3RfPiddE";    // votre Public Key
@@ -472,6 +473,234 @@ const Table = ({cols,rows,onRow}) => (
 );
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
+// ─── ABONNEMENT ──────────────────────────────────────────────────────────────
+const PLANS = {
+  free:       {label:"Essai gratuit", color:"#f59e0b", maxComp:1},
+  starter:    {label:"Starter",       color:"#3b82f6", maxComp:1},
+  pro:        {label:"Pro",           color:"#8b5cf6", maxComp:3},
+  enterprise: {label:"Enterprise",    color:"#10b981", maxComp:999},
+};
+
+const getPlanInfo = (sub) => {
+  if(!sub) return {plan:"free", label:"Essai gratuit", color:"#f59e0b", maxComp:1, isActive:false, trialDaysLeft:0};
+  const p = PLANS[sub.plan]||PLANS.free;
+  const now = new Date();
+  const trialEnd = sub.trial_ends_at ? new Date(sub.trial_ends_at) : null;
+  const trialDaysLeft = trialEnd ? Math.max(0, Math.ceil((trialEnd-now)/(1000*60*60*24))) : 0;
+  const isActive = sub.status==="active" || (sub.status==="trial" && trialDaysLeft>0);
+  return {...p, plan:sub.plan||"free", isActive, trialDaysLeft, status:sub.status};
+};
+
+const SubscriptionBanner = ({sub, onUpgrade}) => {
+  const info = getPlanInfo(sub);
+  if(!sub || sub.status==="active") return null;
+  const expired = sub.status==="trial" && info.trialDaysLeft===0;
+  const bg = expired ? "#fee2e2" : info.trialDaysLeft<=3 ? "#fff3cd" : "#eff6ff";
+  const color = expired ? "#dc2626" : info.trialDaysLeft<=3 ? "#92400e" : "#1d4ed8";
+  const msg = expired
+    ? "⛔ Votre période d'essai est terminée. Abonnez-vous pour continuer."
+    : `⏳ Essai gratuit : ${info.trialDaysLeft} jour(s) restant(s).`;
+  return (
+    <div style={{background:bg,color,padding:"10px 20px",fontSize:"13px",
+                 display:"flex",justifyContent:"space-between",alignItems:"center",
+                 borderBottom:"1px solid rgba(0,0,0,0.08)"}}>
+      <span>{msg}</span>
+      <button onClick={onUpgrade}
+        style={{background:color,color:"#fff",border:"none",borderRadius:"6px",
+                padding:"5px 14px",cursor:"pointer",fontSize:"12px",fontWeight:600}}>
+        Voir les plans
+      </button>
+    </div>
+  );
+};
+
+const PricingPage = ({currentSub, userId, onClose}) => {
+  const [billing,setBilling]=useState("monthly");
+  const prices = {
+    starter:  {monthly:2500,  annual:2000},
+    pro:      {monthly:6000,  annual:4800},
+    enterprise:{monthly:15000,annual:12000},
+  };
+  const pay = async (plan) => {
+    if(typeof window.FedaPay==="undefined"){alert("FedaPay non chargé. Vérifiez votre connexion."); return;}
+    window.FedaPay.init({public_key:"pk_live_VOTRE_CLE_FEDAPAY",
+      transaction:{amount:prices[plan][billing],description:`RH-Paie Pro ${plan} - ${billing}`},
+      customer:{email:currentSub?.email||""},
+      onComplete:async(t)=>{
+        if(t.reason==="APPROVED"){
+          const endDate = new Date();
+          endDate.setMonth(endDate.getMonth()+(billing==="annual"?12:1));
+          await supabase.from("subscriptions").upsert({
+            user_id:userId, plan, status:"active",
+            billing_cycle:billing, expires_at:endDate.toISOString(),
+            updated_at:new Date().toISOString()
+          },{onConflict:"user_id"});
+          toast.success("✅ Abonnement activé !");
+          if(onClose) onClose();
+        }
+      }
+    }).open();
+  };
+  const planCards = [
+    {key:"starter", name:"Starter", desc:"1 société", icon:"🌱"},
+    {key:"pro",     name:"Pro",     desc:"3 sociétés", icon:"🚀"},
+    {key:"enterprise",name:"Enterprise",desc:"Illimité",icon:"🏢"},
+  ];
+  return (
+    <div style={{padding:"24px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"24px"}}>
+        <h2 style={{fontSize:"22px",fontWeight:700,color:"#1a3a6b"}}>💳 Plans & Abonnements</h2>
+        {onClose&&<Btn onClick={onClose} variant="ghost" small>✕ Fermer</Btn>}
+      </div>
+      <div style={{display:"flex",gap:"8px",marginBottom:"24px",background:"#f0f4ff",
+                   padding:"4px",borderRadius:"8px",width:"fit-content"}}>
+        {["monthly","annual"].map(b=>(
+          <button key={b} onClick={()=>setBilling(b)}
+            style={{padding:"6px 16px",borderRadius:"6px",border:"none",cursor:"pointer",
+                    fontWeight:600,fontSize:"13px",transition:"all 0.15s",
+                    background:billing===b?"#1a3a6b":"transparent",
+                    color:billing===b?"#fff":"#64748b"}}>
+            {b==="monthly"?"Mensuel":"Annuel"}{b==="annual"&&<span style={{color:"#10b981",marginLeft:"4px",fontSize:"11px"}}>-20%</span>}
+          </button>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:"16px"}}>
+        {planCards.map(({key,name,desc,icon})=>{
+          const isCurrent = currentSub?.plan===key && currentSub?.status==="active";
+          const price = prices[key][billing];
+          return (
+            <div key={key} style={{background:"#fff",borderRadius:"12px",padding:"24px",
+                                   border:`2px solid ${isCurrent?"#1a3a6b":"#e2e8f0"}`,
+                                   boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
+              <div style={{fontSize:"28px",marginBottom:"8px"}}>{icon}</div>
+              <div style={{fontSize:"18px",fontWeight:700,color:"#1a3a6b"}}>{name}</div>
+              <div style={{fontSize:"12px",color:"#64748b",marginBottom:"12px"}}>{desc}</div>
+              <div style={{fontSize:"24px",fontWeight:800,color:"#1a3a6b",marginBottom:"4px"}}>
+                {price.toLocaleString("fr-FR")} <span style={{fontSize:"13px",fontWeight:400}}>FCFA/mois</span>
+              </div>
+              {isCurrent
+                ? <div style={{background:"#d1fae5",color:"#065f46",padding:"8px",borderRadius:"6px",
+                               textAlign:"center",fontSize:"12px",fontWeight:600}}>✅ Plan actuel</div>
+                : <button onClick={()=>pay(key)}
+                    style={{width:"100%",background:"#1a3a6b",color:"#fff",border:"none",
+                            borderRadius:"8px",padding:"10px",cursor:"pointer",fontWeight:600,fontSize:"13px"}}>
+                    Choisir {name}
+                  </button>
+              }
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ─── ADMIN ────────────────────────────────────────────────────────────────────
+const AdminPanel = () => {
+  const [users,setUsers]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState("");
+
+  useEffect(()=>{
+    (async()=>{
+      const {data}=await supabase.from("subscriptions").select("*").order("created_at",{ascending:false});
+      setUsers(data||[]); setLoading(false);
+    })();
+  },[]);
+
+  const updatePlan = async (userId, plan, status) => {
+    await supabase.from("subscriptions").update({plan,status,updated_at:new Date().toISOString()}).eq("user_id",userId);
+    setUsers(u=>u.map(x=>x.user_id===userId?{...x,plan,status}:x));
+    toast.success("Plan mis à jour !");
+  };
+
+  const filtered = users.filter(u=>
+    (u.user_id||"").toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"24px"}}>
+        <h2 style={{fontSize:"22px",fontWeight:700,color:"#1a3a6b"}}>🛡️ Panneau Admin</h2>
+        <div style={{background:"#fee2e2",color:"#dc2626",padding:"4px 12px",borderRadius:"20px",fontSize:"12px",fontWeight:600}}>ADMIN</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px",marginBottom:"24px"}}>
+        {[
+          {label:"Total utilisateurs",val:users.length,icon:"👤"},
+          {label:"Actifs",val:users.filter(u=>u.status==="active").length,icon:"✅"},
+          {label:"En essai",val:users.filter(u=>u.status==="trial").length,icon:"⏳"},
+          {label:"Expirés",val:users.filter(u=>u.status==="expired"||(!u.status)).length,icon:"⛔"},
+        ].map(s=>(
+          <div key={s.label} style={{background:"#fff",borderRadius:"10px",padding:"16px",
+                                     border:"1px solid #e2e8f0",textAlign:"center"}}>
+            <div style={{fontSize:"24px"}}>{s.icon}</div>
+            <div style={{fontSize:"22px",fontWeight:800,color:"#1a3a6b"}}>{s.val}</div>
+            <div style={{fontSize:"11px",color:"#64748b"}}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+      <Card>
+        <Input label="Rechercher par User ID" value={search} onChange={setSearch} placeholder="UUID..."/>
+        {loading ? <div style={{padding:"20px",textAlign:"center",color:"#64748b"}}>Chargement…</div> : (
+          <div style={{overflowX:"auto",marginTop:"16px"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12px"}}>
+              <thead>
+                <tr style={{background:"#f8fafc"}}>
+                  {["User ID","Plan","Statut","Expire le","Facturation","Actions"].map(h=>(
+                    <th key={h} style={{padding:"10px 12px",textAlign:"left",fontWeight:600,
+                                        color:"#64748b",borderBottom:"1px solid #e2e8f0"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(u=>{
+                  const info = getPlanInfo(u);
+                  return (
+                    <tr key={u.user_id} style={{borderBottom:"1px solid #f1f5f9"}}>
+                      <td style={{padding:"10px 12px",fontFamily:"monospace",fontSize:"11px",color:"#64748b"}}>
+                        {u.user_id?.substring(0,16)}…
+                      </td>
+                      <td style={{padding:"10px 12px"}}>
+                        <span style={{background:info.color+"22",color:info.color,padding:"2px 8px",
+                                      borderRadius:"20px",fontSize:"11px",fontWeight:600}}>
+                          {info.label}
+                        </span>
+                      </td>
+                      <td style={{padding:"10px 12px"}}>
+                        <span style={{color:u.status==="active"?"#10b981":u.status==="trial"?"#f59e0b":"#ef4444",fontWeight:600}}>
+                          {u.status||"—"}
+                        </span>
+                      </td>
+                      <td style={{padding:"10px 12px",color:"#64748b"}}>
+                        {u.trial_ends_at ? new Date(u.trial_ends_at).toLocaleDateString("fr-FR") :
+                         u.expires_at   ? new Date(u.expires_at).toLocaleDateString("fr-FR") : "—"}
+                      </td>
+                      <td style={{padding:"10px 12px",color:"#64748b"}}>{u.billing_cycle||"—"}</td>
+                      <td style={{padding:"10px 12px"}}>
+                        <div style={{display:"flex",gap:"4px"}}>
+                          {["starter","pro","enterprise"].map(p=>(
+                            <button key={p} onClick={()=>updatePlan(u.user_id,p,"active")}
+                              style={{padding:"3px 8px",fontSize:"10px",borderRadius:"4px",border:"1px solid #e2e8f0",
+                                      cursor:"pointer",background:u.plan===p?"#1a3a6b":"#fff",
+                                      color:u.plan===p?"#fff":"#1a3a6b",fontWeight:600}}>
+                              {p}
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {filtered.length===0&&<div style={{padding:"20px",textAlign:"center",color:"#64748b"}}>Aucun utilisateur trouvé</div>}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+};
+
 const NAV = [
   {id:"dashboard",icon:"⊞",label:"Tableau de bord"},
   {id:"companies",icon:"🏢",label:"Sociétés"},
@@ -483,7 +712,11 @@ const NAV = [
   {id:"settings",icon:"⚙",label:"Paramètres"},
 ];
 
-const Sidebar = ({page,setPage,user,onLogout,open=false,setOpen=()=>{}}) => (
+const Sidebar = ({page,setPage,user,onLogout,open=false,setOpen=()=>{},sub,onUpgrade}) => {
+  const info = getPlanInfo(sub);
+  const isAdmin = user?.email===ADMIN_EMAIL;
+  const nav = isAdmin ? [...NAV,{id:"admin",icon:"🛡️",label:"Admin"}] : NAV;
+  return (
   <>
     <div className={`rh-overlay ${open?"open":""}`} onClick={()=>setOpen(false)}/>
     <aside className={`rh-sidebar ${open?"open":""}`} style={{background:G.sidebar,borderRight:`1px solid ${G.border}`}}>
@@ -492,9 +725,19 @@ const Sidebar = ({page,setPage,user,onLogout,open=false,setOpen=()=>{}}) => (
           style={{position:"absolute",top:"14px",right:"14px",background:"none",border:"none",color:"#fff",fontSize:"24px",cursor:"pointer",lineHeight:1}}>×</button>
         <div className="rh-sidebar-brand-text" style={{fontSize:"18px",fontWeight:800,color:"#ffffff",letterSpacing:"-0.5px"}}>RH-Paie Pro</div>
         <div className="rh-sidebar-brand-text" style={{fontSize:"11px",color:"#a0c0e8",marginTop:"3px"}}>Gestion de la Paie</div>
+        {/* Badge plan */}
+        <div onClick={onUpgrade}
+          style={{marginTop:"8px",display:"inline-flex",alignItems:"center",gap:"5px",
+                  background:info.color+"33",border:`1px solid ${info.color}66`,
+                  borderRadius:"20px",padding:"3px 10px",cursor:"pointer"}}>
+          <span style={{width:"7px",height:"7px",borderRadius:"50%",background:info.color,display:"inline-block"}}/>
+          <span style={{fontSize:"11px",fontWeight:700,color:info.color}}>{info.label}</span>
+          {info.status==="trial"&&info.trialDaysLeft>0&&
+            <span style={{fontSize:"10px",color:"#fbbf24"}}>({info.trialDaysLeft}j)</span>}
+        </div>
       </div>
       <nav style={{flex:1,padding:"16px 12px",overflowY:"auto"}}>
-        {NAV.map(n=>(
+        {nav.map(n=>(
           <button key={n.id} onClick={()=>{setPage(n.id);setOpen(false);}}
             style={{width:"100%",display:"flex",alignItems:"center",gap:"10px",padding:"10px 12px",
                     borderRadius:"8px",border:"none",cursor:"pointer",textAlign:"left",
@@ -515,7 +758,8 @@ const Sidebar = ({page,setPage,user,onLogout,open=false,setOpen=()=>{}}) => (
       </div>
     </aside>
   </>
-);
+  );
+};
 // ─── PAGES ────────────────────────────────────────────────────────────────────
 
 // LOGIN
@@ -1449,7 +1693,7 @@ const getTauxRisque = (taux) => {
   return 4;
 };
 
-const genDeclarationCNSS = async (comp, employes, mois, annee, extra={}) => {
+const genDeclarationCNSS = async (comp, employes, mois, annee) => {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(b64ToBuffer(CNSS_TEMPLATE_B64));
 
@@ -1457,22 +1701,14 @@ const genDeclarationCNSS = async (comp, employes, mois, annee, extra={}) => {
   const ws2 = wb.getWorksheet('annexe');
 
   const moisNum  = parseInt(mois);
-  const moisSuiv = moisNum===12?1:moisNum+1;
-  const anneeSuiv= moisNum===12?parseInt(annee)+1:parseInt(annee);
   const joursFin = [4,6,9,11].includes(moisNum)?30:moisNum===2?28:31;
-  const periodeDebut  = `01/${String(moisNum).padStart(2,'0')}/${annee}`;
-  const periodeFin    = `${joursFin}/${String(moisNum).padStart(2,'0')}/${annee}`;
-  const dateLimite    = `10/${String(moisSuiv).padStart(2,'0')}/${anneeSuiv}`;
-  const taux          = parseFloat(comp?.taux_cnss_patronale||0.194);
-  const tauxRisque    = getTauxRisque(taux);
-  const societe       = comp?.raison_sociale||'';
-  const ifu           = String(comp?.ifu||'');
-  const cnssEmp       = comp?.cnss_employeur||comp?.rccm||'';
-  const burServ       = extra.bur_serv||'';
-  const agence        = extra.agence||'';
-  const centreRecouv  = extra.centre_recouvrement||'';
-  const adresse       = extra.adresse||comp?.adresse||'';
-  const localisation  = extra.localisation||'';
+  const periodeDebut = `01/${String(moisNum).padStart(2,'0')}/${annee}`;
+  const periodeFin   = `${joursFin}/${String(moisNum).padStart(2,'0')}/${annee}`;
+  const taux       = parseFloat(comp?.taux_cnss_patronale||0.194);
+  const tauxRisque = getTauxRisque(taux);
+  const societe    = comp?.raison_sociale||'';
+  const ifu        = comp?.ifu||'';
+  const cnssEmp    = comp?.cnss_employeur||comp?.rccm||'';
 
   const masse    = employes.reduce((s,e)=>s+parseFloat(e.salaire_brut||0),0);
   const nbEmp    = employes.length;
@@ -1489,32 +1725,34 @@ const genDeclarationCNSS = async (comp, employes, mois, annee, extra={}) => {
     if(numF && typeof val==='number') cell.numFmt = numFmt;
   };
 
-  // ── IFU chiffre par chiffre dans C12:O12 ──
+  // Remplissage IFU chiffre par chiffre dans les cellules C12 à O12
+  const ifuStr = String(ifu).replace(/\D/g,'');
   const ifuCols = ['C','D','E','F','G','H','I','J','K','L','M','N','O'];
-  ifuCols.forEach((col,i) => {
-    ws.getCell(`${col}12`).value = ifu[i]||'';
+  ifuCols.forEach((col,idx) => {
+    ws.getCell(`${col}12`).value = ifuStr[idx] !== undefined ? ifuStr[idx] : '';
   });
 
-  // ── Côté gauche (valeurs en colonne C de chaque ligne) ──
+  // N° CNSS Employeur
   ws.getCell('C14').value = cnssEmp;
-  ws.getCell('C16').value = burServ;
-  ws.getCell('C18').value = agence;
+  // Debut de la période
   ws.getCell('C20').value = periodeDebut;
+  // Date limite de dépôt = 10 du mois suivant
+  const moisSuivant = moisNum===12?1:moisNum+1;
+  const anneeSuivant = moisNum===12?parseInt(annee)+1:parseInt(annee);
+  const dateLimite = `10/${String(moisSuivant).padStart(2,'0')}/${anneeSuivant}`;
   ws.getCell('C22').value = dateLimite;
-  ws.getCell('C24').value = adresse;
 
-  // ── Côté droit (colonne U) ──
-  setV(ws.getCell('U10'), `${MOIS[moisNum]} ${annee}`);
-  setV(ws.getCell('U12'), societe);
-  setV(ws.getCell('U14'), 'CNSS');
-  setV(ws.getCell('U16'), centreRecouv);
-  setV(ws.getCell('U18'), 'Salaires');
-  setV(ws.getCell('U20'), periodeFin);
-  setV(ws.getCell('U22'), dateLimite);
-  setV(ws.getCell('U24'), localisation);
+  // Remplissage côté droit (colonne U pour les valeurs, T pour les labels fixes)
+  setV(ws.getCell('U10'), `${MOIS[moisNum]} ${annee}`);  // PERIODE DE COTISATION
+  setV(ws.getCell('U12'), societe);                        // NOM DU CONTRIBUABLE
+  setV(ws.getCell('U14'), 'CNSS');                         // COTISATION
+  // U16 = CENTRE DE RECOUVREMENT (manuel)
+  setV(ws.getCell('U18'), 'Salaires');                     // OBJET IMPOSABLE
+  setV(ws.getCell('U20'), periodeFin);                     // FIN DE LA PERIODE
+  setV(ws.getCell('U22'), dateLimite);                     // DATE LIMITE DE PAIEMENT
 
-  // ── Montants ──
-  setV(ws.getCell('U34'), nbEmp);
+  // Bas du formulaire (montants)
+  setV(ws.getCell('U34'), nbEmp, true);
   setV(ws.getCell('U36'), Math.round(masse), true);
   setV(ws.getCell('U38'), prestFam, true);
   setV(ws.getCell('U40'), risques, true);
@@ -1524,14 +1762,15 @@ const genDeclarationCNSS = async (comp, employes, mois, annee, extra={}) => {
   setV(ws.getCell('U48'), totCot, true);
   setV(ws.getCell('U50'), totCot, true);
 
-  // ── Signature ──
-  ws.getCell('R53').value = `Cotonou, le ${dateLimite}`;
+  // Signature
+  ws.getCell('R53').value = `Cotonou, le ${periodeFin}`;
 
   // ── FEUILLE ANNEXE ──
   const thin = {style:'thin'};
   const brd  = {top:thin,left:thin,bottom:thin,right:thin};
   const cal  = (bold=false,sz=9) => ({name:'Calibri',bold,size:sz});
 
+  // Sous-titre
   ws2.mergeCells(2,1,2,23);
   const cSub = ws2.getCell(2,1);
   cSub.value = `${societe}  —  Période : ${periodeDebut} au ${periodeFin}  —  N° CNSS : ${cnssEmp}`;
@@ -1587,27 +1826,19 @@ const genDeclarationCNSS = async (comp, employes, mois, annee, extra={}) => {
   a.click(); URL.revokeObjectURL(url);
 };
 
-const genDeclarationITS = async (comp, employes, mois, annee, extra={}) => {
+const genDeclarationITS = async (comp, employes, mois, annee) => {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(b64ToBuffer(ITS_TEMPLATE_B64));
 
   const ws = wb.getWorksheet('declaration');
 
   const moisNum  = parseInt(mois);
-  const moisSuiv = moisNum===12?1:moisNum+1;
-  const anneeSuiv= moisNum===12?parseInt(annee)+1:parseInt(annee);
   const joursFin = [4,6,9,11].includes(moisNum)?30:moisNum===2?28:31;
   const periodeDebut = `01/${String(moisNum).padStart(2,'0')}/${annee}`;
   const periodeFin   = `${joursFin}/${String(moisNum).padStart(2,'0')}/${annee}`;
-  const dateLimite   = `10/${String(moisSuiv).padStart(2,'0')}/${anneeSuiv}`;
-  const societe      = comp?.raison_sociale||'';
-  const ifu          = String(comp?.ifu||'');
-  const cnssEmp      = comp?.cnss_employeur||comp?.rccm||'';
-  const burServ      = extra.bur_serv||'';
-  const agence       = extra.agence||'';
-  const centreRecouv = extra.centre_recouvrement||'';
-  const adresse      = extra.adresse||comp?.adresse||'';
-  const localisation = extra.localisation||'';
+  const societe  = comp?.raison_sociale||'';
+  const ifu      = comp?.ifu||'';
+  const cnssEmp  = comp?.cnss_employeur||comp?.rccm||'';
 
   const nbEmp  = employes.length;
   const masse  = employes.reduce((s,e)=>s+parseFloat(e.salaire_brut||0),0);
@@ -1619,35 +1850,38 @@ const genDeclarationITS = async (comp, employes, mois, annee, extra={}) => {
     if(numF && typeof val==='number') cell.numFmt = numFmt;
   };
 
-  // ── IFU chiffre par chiffre dans B14:N14 ──
+  // IFU chiffre par chiffre dans les cellules B14 à N14 (ITS)
+  const ifuStr = String(ifu).replace(/\D/g,'');
   const ifuCols = ['B','C','D','E','F','G','H','I','J','K','L','M','N'];
-  ifuCols.forEach((col,i) => {
-    ws.getCell(`${col}14`).value = ifu[i]||'';
+  ifuCols.forEach((col,idx) => {
+    ws.getCell(`${col}14`).value = ifuStr[idx] !== undefined ? ifuStr[idx] : '';
   });
 
-  // ── Côté gauche ──
-  ws.getCell('B16').value = cnssEmp;
-  ws.getCell('B18').value = burServ;
-  ws.getCell('B20').value = agence;
-  ws.getCell('B22').value = periodeDebut;
-  ws.getCell('B24').value = dateLimite;
-  ws.getCell('B26').value = adresse;
+  // Calcul date limite = 10 du mois suivant
+  const moisSuivant = moisNum===12?1:moisNum+1;
+  const anneeSuivant = moisNum===12?parseInt(annee)+1:parseInt(annee);
+  const dateLimite = `10/${String(moisSuivant).padStart(2,'0')}/${anneeSuivant}`;
 
-  // ── Côté droit (colonne T, cellules fusionnées T:U) ──
-  setV(ws.getCell('T12'), `${MOIS[moisNum]} ${annee}`);
-  setV(ws.getCell('T14'), societe);
-  setV(ws.getCell('T16'), 'IRPP-TS');
-  setV(ws.getCell('T18'), centreRecouv);
-  setV(ws.getCell('T20'), periodeFin);
-  setV(ws.getCell('T22'), dateLimite);
-  setV(ws.getCell('T24'), localisation);
+  // Côté gauche
+  ws.getCell('B16').value = cnssEmp;       // NUMERO COMPTE COTISATION
+  ws.getCell('B22').value = periodeDebut;   // DEBUT DE LA PERIODE
+  ws.getCell('B24').value = dateLimite;     // DATE LIMITE DE DEPÔT
 
-  // ── Montants ──
-  setV(ws.getCell('T36'), nbEmp);
-  setV(ws.getCell('T38'), Math.round(masse), true);
-  setV(ws.getCell('T40'), Math.round(itsTot), true);
+  // Côté droit (colonnes T/U)
+  setV(ws.getCell('T12'), `${MOIS[moisNum]} ${annee}`);   // PERIODE DE COTISATION
+  setV(ws.getCell('T14'), societe);                          // NOM DU CONTRIBUABLE
+  setV(ws.getCell('T16'), 'IRPP-TS');                        // COTISATION
+  // T18 = CENTRE DE RECOUVREMENT (manuel)
+  setV(ws.getCell('T20'), 'Salaires & traitements');         // OBJET IMPOSABLE
+  setV(ws.getCell('T22'), periodeFin);                       // FIN DE LA PERIODE
+  setV(ws.getCell('T24'), dateLimite);                       // DATE LIMITE DE PAIEMENT
 
-  // ── Signature ──
+  // Montants bas du formulaire (colonne U pour les valeurs)
+  setV(ws.getCell('U36'), nbEmp, true);              // Nombre de salariés
+  setV(ws.getCell('U38'), Math.round(masse), true);   // Montant brut des salaires
+  setV(ws.getCell('U40'), Math.round(itsTot), true);  // IRPP/TS à reverser
+
+  // Signature
   ws.getCell('Q44').value = `Cotonou, le ${dateLimite}`;
 
   const buf  = await wb.xlsx.writeBuffer();
@@ -1900,67 +2134,6 @@ const TemplateManager = ({companies, user, compId, mois, annee, data}) => {
   );
 };
 
-// ─── MODAL FORMULAIRE DÉCLARATION ────────────────────────────────────────────
-const DeclarationFormModal = ({type, comp, mois, annee, employes, onClose}) => {
-  const moisNum  = parseInt(mois);
-  const moisSuiv = moisNum===12?1:moisNum+1;
-  const anneeSuiv= moisNum===12?parseInt(annee)+1:parseInt(annee);
-  const dateLimiteAuto = `10/${String(moisSuiv).padStart(2,'0')}/${anneeSuiv}`;
-  const [form, setForm] = useState({
-    bur_serv: '',
-    agence: '',
-    centre_recouvrement: '',
-    adresse: comp?.adresse||'',
-    localisation: 'Cotonou',
-  });
-  const [loading, setLoading] = useState(false);
-  const f = (k,v) => setForm(p=>({...p,[k]:v}));
-  const isCNSS = type==='cnss';
-
-  const generate = async () => {
-    setLoading(true);
-    try {
-      if(isCNSS) {
-        await genDeclarationCNSS(comp, employes, mois, annee, form);
-        toast.success("✅ Déclaration CNSS téléchargée !");
-      } else {
-        await genDeclarationITS(comp, employes, mois, annee, form);
-        toast.success("✅ Déclaration ITS téléchargée !");
-      }
-      onClose();
-    } catch(e) {
-      toast.error("Erreur génération : "+e.message);
-    } finally { setLoading(false); }
-  };
-
-  return (
-    <Modal title={isCNSS?"📊 Générer Déclaration CNSS":"📊 Générer Déclaration ITS"} onClose={onClose} width="540px">
-      <div style={{background:"#f0f4ff",borderRadius:"8px",padding:"12px 14px",marginBottom:"16px",fontSize:"12px",color:"#1a3a6b",border:"1px solid #d0dff5"}}>
-        <strong>Société :</strong> {comp?.raison_sociale} &nbsp;|&nbsp;
-        <strong>Période :</strong> {MOIS[moisNum]} {annee} &nbsp;|&nbsp;
-        <strong>Date limite :</strong> {dateLimiteAuto}
-      </div>
-      <div style={{fontSize:"12px",fontWeight:700,color:"#5a7a9a",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:"10px"}}>
-        Champs à remplir manuellement
-      </div>
-      <div className="rh-form-grid-2">
-        <Input label="BUR/SERV DE GESTION" value={form.bur_serv} onChange={v=>f('bur_serv',v)} placeholder="Ex : DGI Cotonou"/>
-        <Input label="AGENCE" value={form.agence} onChange={v=>f('agence',v)} placeholder="Ex : Agence principale"/>
-      </div>
-      <Input label="CENTRE DE RECOUVREMENT" value={form.centre_recouvrement} onChange={v=>f('centre_recouvrement',v)} placeholder="Ex : Centre fiscal de Cotonou"/>
-      <Input label="ADRESSE DE CORRESPONDANCE" value={form.adresse} onChange={v=>f('adresse',v)} placeholder="Ex : 01 BP 369, Cotonou"/>
-      <Input label="LOCALISATION" value={form.localisation} onChange={v=>f('localisation',v)} placeholder="Ex : Cotonou"/>
-      <div style={{background:"#f8faff",borderRadius:"8px",padding:"10px 14px",marginTop:"8px",marginBottom:"16px",fontSize:"12px",color:"#5a7a9a",border:"1px solid #e0eaff"}}>
-        ℹ️ Les dates (début, fin, limite dépôt/paiement) sont calculées automatiquement selon la période.
-      </div>
-      <div className="rh-actions-row">
-        <Btn onClick={generate} disabled={loading}>{loading?"Génération...":"⬇️ Générer et télécharger"}</Btn>
-        <Btn onClick={onClose} variant="ghost">Annuler</Btn>
-      </div>
-    </Modal>
-  );
-};
-
 const Declarations = ({companies, user}) => {
   const [compId,setCompId]=useState(companies[0]?.id||"");
   const [mois,setMois]=useState(String(new Date().getMonth()+1));
@@ -1969,7 +2142,6 @@ const Declarations = ({companies, user}) => {
   const [decl,setDecl]=useState(null);
   const [msg,setMsg]=useState("");
   const [tab,setTab]=useState("suivi");
-  const [declForm,setDeclForm]=useState(null);
   const years=Array.from({length:5},(_,i)=>String(CURRENT_YEAR-i));
 
   const load = useCallback(async()=>{
@@ -2066,30 +2238,33 @@ const Declarations = ({companies, user}) => {
     win.onload=()=>win.print();
   };
 
-  const declComp=companies.find(c=>c.id===compId);
-  const declEmps=(data?.payrolls_detail||[]).map(p=>({
-    ...p,...(p.employees||{}),
-    nom:p.employees?.nom||'',prenoms:p.employees?.prenoms||'',
-    cnss:p.employees?.cnss||'',ifu:p.employees?.ifu||'',
-    date_embauche:p.employees?.date_embauche||'',
-  }));
-
   return (
     <div>
-      {declForm&&<DeclarationFormModal
-        type={declForm}
-        comp={declComp}
-        mois={mois} annee={annee}
-        employes={declEmps}
-        onClose={()=>setDeclForm(null)}
-      />}
       <div className="rh-page-header">
         <h2 style={{fontSize:"22px",fontWeight:700,color:"#1a3a6b"}}>Déclarations CNSS / VPS / ITS</h2>
         {data?.nb_fiches>0&&(
           <div className="rh-btn-group">
             <Btn onClick={printDecl} variant="secondary" small>🖨 Imprimer</Btn>
-            <Btn onClick={()=>setDeclForm('cnss')} variant="primary" small>📊 CNSS Excel</Btn>
-            <Btn onClick={()=>setDeclForm('its')} variant="ghost" small>📊 ITS Excel</Btn>
+            <Btn onClick={async()=>{
+              const comp=companies.find(c=>c.id===compId);
+              const emps=(data?.payrolls_detail||[]).map(p=>({
+                ...p,...(p.employees||{}),
+                nom:p.employees?.nom||'',prenoms:p.employees?.prenoms||'',
+                cnss:p.employees?.cnss||'',ifu:p.employees?.ifu||'',
+                date_embauche:p.employees?.date_embauche||'',
+              }));
+              await genDeclarationCNSS(comp,emps,mois,annee);
+              toast.success("✅ Déclaration CNSS téléchargée !");
+            }} variant="primary" small>📊 CNSS Excel</Btn>
+            <Btn onClick={async()=>{
+              const comp=companies.find(c=>c.id===compId);
+              const emps=(data?.payrolls_detail||[]).map(p=>({
+                ...p,...(p.employees||{}),
+                nom:p.employees?.nom||'',prenoms:p.employees?.prenoms||'',
+              }));
+              await genDeclarationITS(comp,emps,mois,annee);
+              toast.success("✅ Déclaration ITS téléchargée !");
+            }} variant="ghost" small>📊 ITS Excel</Btn>
           </div>
         )}
       </div>
@@ -3083,6 +3258,8 @@ export default function App() {
   const [loading,setLoading]=useState(true);
   const [sidebarOpen,setSidebarOpen]=useState(false);
   const [isRecovery,setIsRecovery]=useState(false);
+  const [sub,setSub]=useState(null);
+  const [showPricing,setShowPricing]=useState(false);
 
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>{
@@ -3101,7 +3278,14 @@ export default function App() {
     setCompanies(data||[]);
   },[user]);
 
+  const loadSub = useCallback(async()=>{
+    if(!user) return;
+    const {data}=await supabase.from("subscriptions").select("*").eq("user_id",user.id).maybeSingle();
+    setSub(data||{status:"trial",plan:"free",user_id:user.id});
+  },[user]);
+
   useEffect(()=>{loadCompanies();},[loadCompanies]);
+  useEffect(()=>{loadSub();},[loadSub]);
 
   const logout=async()=>{ await supabase.auth.signOut(); setUser(null); };
 
@@ -3124,13 +3308,15 @@ export default function App() {
     declarations:<Declarations companies={companies} user={user}/>,
     rapport:<RapportCabinet companies={companies}/>,
     settings:<Settings user={user}/>,
+    pricing:<PricingPage currentSub={sub} userId={user.id} onClose={()=>setPage("dashboard")}/>,
+    admin:<AdminPanel/>,
   };
 
+  const handleUpgrade = () => setPage("pricing");
 
   return (
     <div style={{minHeight:"100vh",background:"#f0f4ff",color:"#1a2a4a",fontFamily:"system-ui,sans-serif"}}>
       <ToastContainer/>
-      {/* Mobile top bar */}
       <div className="rh-topbar">
         <div style={{fontSize:"16px",fontWeight:800,color:"#fff"}}>RH-Paie Pro</div>
         <button onClick={()=>setSidebarOpen(true)}
@@ -3138,9 +3324,10 @@ export default function App() {
                   padding:"4px 8px",lineHeight:1}}>☰</button>
       </div>
       <Sidebar page={page} setPage={setPage} user={user} onLogout={logout}
-               open={sidebarOpen} setOpen={setSidebarOpen}/>
+               open={sidebarOpen} setOpen={setSidebarOpen} sub={sub} onUpgrade={handleUpgrade}/>
       <div className="rh-main">
-        {companies.length===0&&page!=="companies"&&(
+        <SubscriptionBanner sub={sub} onUpgrade={handleUpgrade}/>
+        {companies.length===0&&page!=="companies"&&page!=="pricing"&&page!=="admin"&&(
           <div className="rh-warning-banner">
             ⚠️ Commencez par créer votre <strong
               style={{cursor:"pointer",textDecoration:"underline"}} onClick={()=>setPage("companies")}>
@@ -3148,7 +3335,7 @@ export default function App() {
             </strong>.
           </div>
         )}
-        {pages[page]}
+        {pages[page]||pages["dashboard"]}
       </div>
     </div>
   );
