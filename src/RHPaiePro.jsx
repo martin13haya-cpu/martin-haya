@@ -523,7 +523,7 @@ const PricingPage = ({currentSub, userId, onClose}) => {
   };
   const pay = async (plan) => {
     if(typeof window.FedaPay==="undefined"){alert("FedaPay non chargé. Vérifiez votre connexion."); return;}
-    window.FedaPay.init({public_key:"pk_live_VOTRE_CLE_FEDAPAY",
+    window.FedaPay.init({public_key:"pk_live_Ca1JjsEAdsaJiGf29jSOdA91",
       transaction:{amount:prices[plan][billing],description:`RH-Paie Pro ${plan} - ${billing}`},
       customer:{email:currentSub?.email||""},
       onComplete:async(t)=>{
