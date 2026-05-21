@@ -7,3 +7,5 @@ createRoot(document.getElementById('root')).render(
     <App />
   </StrictMode>
 )
+import ComptaPro from './ComptaPro';
+ReactDOM.createRoot(...).render(<ComptaPro/>)

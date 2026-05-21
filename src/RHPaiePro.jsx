@@ -1223,9 +1223,9 @@ const Employees = ({companies}) => {
   const [compId,setCompId]=useState(companies[0]?.id||"");
   const [modal,setModal]=useState(null);
   const [msg,setMsg]=useState("");
-  const initForm={matricule:"",email:"",nom:"",prenoms:"",emploi:"",categorie:"",
+  const initForm={matricule:"",whatsApp:"",nom:"",prenoms:"",emploi:"",categorie:"",
     situation_matrimoniale:"Célibataire",nb_enfants:"0",cnss:"",ifu:"",
-    salaire_base:"",date_embauche:"",nationalite:"Béninoise",premier_emploi:false,email:"",actif:true};
+    salaire_base:"",date_embauche:"",nationalite:"Béninoise",premier_emploi:false,whatsApp:"",actif:true};
   const [form,setForm]=useState(initForm);
   const load = useCallback(async()=>{
     if(!compId) return;
