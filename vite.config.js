@@ -79,3 +79,5 @@ export default defineConfig({
     include: ['exceljs', 'jszip']
   }
 })
+
+// PWA enabled
